@@ -1,6 +1,6 @@
 use std::error::Error;
-use std::io;
 use std::process;
+use std::str::FromStr;
 use std::{
     fmt,
     fs::File,
@@ -10,7 +10,9 @@ use std::{
 };
 
 use csv::{ReaderBuilder, Trim};
+use serde::de::Error as serdeError;
 use serde::Deserialize;
+use serde::Deserializer;
 
 type ClientId = u16;
 type TransactionId = u32;
@@ -90,6 +92,47 @@ impl fmt::Display for Amount {
     }
 }
 
+fn parse_fractional_str(s: &str) -> UnderlyingAmountType {
+    // I'm sorry for that
+    let mut floating_point_bytes = ['0' as u8; 6];
+    floating_point_bytes[1] = '.' as u8;
+    floating_point_bytes[2..]
+        .iter_mut()
+        .zip(s.chars())
+        .for_each(|(a, b)| *a = b as u8);
+    let floating_point = f32::from_str(
+        std::str::from_utf8(&floating_point_bytes)
+            .expect("from_utf8 on fractional part buf failed"),
+    )
+    .expect("parsing fractional part failed");
+    (floating_point * AMOUNT_ONE as f32) as UnderlyingAmountType
+}
+
+impl<'de> Deserialize<'de> for Amount {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s: &str = Deserialize::deserialize(deserializer)?;
+        let mut it = s.split(".");
+        if let Some(trunc_str) = it.next() {
+            let trunc = UnderlyingAmountType::from_str_radix(trunc_str, 10)
+                .expect("could not parse whole part of amount");
+            let amount = if let Some(fract_str) = it.next() {
+                let fract = parse_fractional_str(fract_str);
+                Amount::new(trunc * AMOUNT_ONE + fract)
+            } else {
+                Amount::new(trunc)
+            };
+            Ok(amount)
+        } else {
+            Err(serdeError::custom(String::from(
+                "could not deserialize amount",
+            )))
+        }
+    }
+}
+
 enum Transaction {
     Deposit(ClientId, TransactionId, Amount),
     Withdrawal(ClientId, TransactionId, Amount),
@@ -103,7 +146,7 @@ struct Record {
     r#type: String,
     client: ClientId,
     tx: TransactionId,
-    amount: Option<String>,
+    amount: Option<Amount>,
 }
 
 fn read_input_csv(path: &Path) -> Result<(), Box<dyn Error>> {
