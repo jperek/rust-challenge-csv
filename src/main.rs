@@ -1,4 +1,16 @@
-use std::{fmt, ops::{Add, Sub}};
+use std::error::Error;
+use std::io;
+use std::process;
+use std::{
+    fmt,
+    fs::File,
+    io::BufReader,
+    ops::{Add, Sub},
+    path::{Path, PathBuf},
+};
+
+use csv::{ReaderBuilder, Trim};
+use serde::Deserialize;
 
 type ClientId = u16;
 type TransactionId = u32;
@@ -15,9 +27,7 @@ const AMOUNT_ONE: UnderlyingAmountType = (10 as UnderlyingAmountType).pow(DECIMA
 
 impl Amount {
     pub fn new(value: UnderlyingAmountType) -> Self {
-        Self {
-            value,
-        }
+        Self { value }
     }
 
     pub fn trunc(&self) -> UnderlyingAmountType {
@@ -64,7 +74,7 @@ fn count_remove_trailing_zeroes(mut value: UnderlyingAmountType) -> (usize, Unde
             count += 1;
         }
     }
-   (count, value)
+    (count, value)
 }
 
 impl fmt::Display for Amount {
@@ -77,11 +87,45 @@ impl fmt::Display for Amount {
             let width = DECIMAL_PLACES as usize - count;
             write!(f, "{}.{:0>width$}", trunc, fract, width = width)
         }
-    } 
+    }
+}
+
+enum Transaction {
+    Deposit(ClientId, TransactionId, Amount),
+    Withdrawal(ClientId, TransactionId, Amount),
+    Dispute(ClientId, TransactionId),
+    Resolve(ClientId, TransactionId),
+    Chargeback(ClientId, TransactionId),
+}
+
+#[derive(Debug, Deserialize)]
+struct Record {
+    r#type: String,
+    client: ClientId,
+    tx: TransactionId,
+    amount: Option<String>,
+}
+
+fn read_input_csv(path: &Path) -> Result<(), Box<dyn Error>> {
+    let f = File::open(path)?;
+    let reader = BufReader::new(f);
+    let mut rdr = ReaderBuilder::new().trim(Trim::All).from_reader(reader);
+    for result in rdr.deserialize() {
+        // Notice that we need to provide a type hint for automatic
+        // deserialization.
+        let record: Record = result?;
+        println!("{:?}", record);
+    }
+    Ok(())
 }
 
 fn main() {
-    println!("Hello, world!");
+    let path = std::env::args().nth(1).expect("no path given");
+    let path = PathBuf::from(path);
+    if let Err(err) = read_input_csv(&path) {
+        println!("error reading input csv file: {}", err);
+        process::exit(1);
+    }
 }
 
 #[cfg(test)]
@@ -104,7 +148,10 @@ mod tests {
         assert_eq!(format!("{}", Amount::new(11111)), "1.1111");
         assert_eq!(format!("{}", Amount::new(9999990000)), "999999");
         assert_eq!(format!("{}", Amount::new(9999990100)), "999999.01");
-        assert_eq!(format!("{}", Amount::new(UnderlyingAmountType::MAX)), "1844674407370955.1615");
+        assert_eq!(
+            format!("{}", Amount::new(UnderlyingAmountType::MAX)),
+            "1844674407370955.1615"
+        );
     }
 
     #[test]
@@ -137,7 +184,7 @@ mod tests {
         assert_eq!(count_remove_trailing_zeroes(90), (1, 9));
         assert_eq!(count_remove_trailing_zeroes(100), (2, 1));
         assert_eq!(count_remove_trailing_zeroes(5000), (3, 5));
-        assert_eq!(count_remove_trailing_zeroes(900090), (1, 90009)); 
+        assert_eq!(count_remove_trailing_zeroes(900090), (1, 90009));
         assert_eq!(count_remove_trailing_zeroes(50000000000), (10, 5));
     }
 }
