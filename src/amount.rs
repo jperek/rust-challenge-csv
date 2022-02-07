@@ -1,3 +1,4 @@
+use std::ops::{AddAssign, SubAssign};
 use std::str::FromStr;
 use std::{
     fmt,
@@ -8,9 +9,9 @@ use serde::de::Error as serdeError;
 use serde::Deserialize;
 use serde::Deserializer;
 
-type UnderlyingAmountType = u64;
+type UnderlyingAmountType = i64;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Amount {
     value: UnderlyingAmountType,
 }
@@ -50,14 +51,23 @@ impl Add for Amount {
     }
 }
 
+impl AddAssign for Amount {
+    fn add_assign(&mut self, other: Self) {
+        self.value += other.value;
+    }
+}
+
 impl Sub for Amount {
     type Output = Self;
 
     fn sub(self, other: Self) -> Self::Output {
-        if self.value < other.value {
-            panic!("tried to subtract {} from {}", self, other);
-        }
         Self::new(self.value - other.value)
+    }
+}
+
+impl SubAssign for Amount {
+    fn sub_assign(&mut self, other: Self) {
+        *self = *self - other;
     }
 }
 
@@ -78,6 +88,7 @@ impl fmt::Display for Amount {
         if fract == 0 {
             write!(f, "{}", trunc)
         } else {
+            let fract = fract.abs();
             let (count, fract) = count_remove_trailing_zeroes(fract);
             let width = DECIMAL_PLACES as usize - count;
             write!(f, "{}.{:0>width$}", trunc, fract, width = width)
@@ -145,10 +156,11 @@ mod tests {
         assert_eq!(format!("{}", Amount::new(11111)), "1.1111");
         assert_eq!(format!("{}", Amount::new(9999990000)), "999999");
         assert_eq!(format!("{}", Amount::new(9999990100)), "999999.01");
-        assert_eq!(
-            format!("{}", Amount::new(UnderlyingAmountType::MAX)),
-            "1844674407370955.1615"
-        );
+        assert_eq!(format!("{}", Amount::new(-10000)), "-1");
+        assert_eq!(format!("{}", Amount::new(-11000)), "-1.1");
+        assert_eq!(format!("{}", Amount::new(-10100)), "-1.01");
+        assert_eq!(format!("{}", Amount::new(-10110)), "-1.011");
+        assert_eq!(format!("{}", Amount::new(-10011)), "-1.0011");
     }
 
     #[test]
@@ -164,12 +176,7 @@ mod tests {
         assert_eq!(Amount::new(22222) - Amount::new(11111), Amount::new(11111));
         assert_eq!(Amount::new(10001) - Amount::new(10000), Amount::new(1));
         assert_eq!(Amount::new(10001) - Amount::new(10001), Amount::new(0));
-    }
-
-    #[test]
-    #[should_panic]
-    fn subtracting_overflow() {
-        let _ = Amount::new(10000) - Amount::new(10001);
+        assert_eq!(Amount::new(10000) - Amount::new(10001), Amount::new(-1));
     }
 
     #[test]
