@@ -91,7 +91,11 @@ impl fmt::Display for Amount {
             let fract = fract.abs();
             let (count, fract) = count_remove_trailing_zeroes(fract);
             let width = DECIMAL_PLACES as usize - count;
-            write!(f, "{}.{:0>width$}", trunc, fract, width = width)
+            if self.value < 0 && trunc == 0 {
+                write!(f, "-{}.{:0>width$}", trunc, fract, width = width)
+            } else {
+                write!(f, "{}.{:0>width$}", trunc, fract, width = width)
+            }
         }
     }
 }
@@ -161,6 +165,7 @@ mod tests {
         assert_eq!(format!("{}", Amount::new(-10100)), "-1.01");
         assert_eq!(format!("{}", Amount::new(-10110)), "-1.011");
         assert_eq!(format!("{}", Amount::new(-10011)), "-1.0011");
+        assert_eq!(format!("{}", Amount::new(-5000)), "-0.5");
     }
 
     #[test]

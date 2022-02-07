@@ -1,4 +1,4 @@
-use std::{fmt, collections::HashMap};
+use std::{collections::HashMap, fmt};
 
 use crate::{Amount, ClientId, TransactionId};
 
@@ -23,19 +23,19 @@ impl Client {
                 }
             }
             ClientTransactionType::Dispute => {
-                if let Some(_) = self.transactions.iter().find(|other_tx| {
+                if self.transactions.iter().find(|other_tx| {
                     other_tx.id == transaction.id
                         && (matches!(other_tx.tx_type, ClientTransactionType::Deposit)
                             || matches!(other_tx.tx_type, ClientTransactionType::Withdrawal))
-                }) {
+                }).is_some() {
                     self.transactions.push(transaction);
                 }
             }
             ClientTransactionType::Resolve | ClientTransactionType::Chargeback => {
-                if let Some(_) = self.transactions.iter().find(|other_tx| {
+                if self.transactions.iter().find(|other_tx| {
                     other_tx.id == transaction.id
                         && matches!(other_tx.tx_type, ClientTransactionType::Dispute)
-                }) {
+                }).is_some() {
                     self.transactions.push(transaction);
                 }
             }
@@ -62,13 +62,13 @@ impl Client {
                     }
                 }
                 ClientTransactionType::Dispute => {
-                    if let Some(tx) = self.transactions.iter().find(|other_tx| {
+                    if let Some(tx_found) = self.transactions.iter().find(|other_tx| {
                         other_tx.id == tx.id
                             && (matches!(other_tx.tx_type, ClientTransactionType::Deposit)
                                 || matches!(other_tx.tx_type, ClientTransactionType::Withdrawal))
                     }) {
-                        let mut amount = tx.amount.unwrap();
-                        if matches!(tx.tx_type, ClientTransactionType::Withdrawal) {
+                        let mut amount = tx_found.amount.unwrap();
+                        if matches!(tx_found.tx_type, ClientTransactionType::Withdrawal) {
                             amount = Amount::new(0) - amount;
                         }
                         disputed.insert(tx.id, amount);
@@ -93,12 +93,7 @@ impl Client {
             }
         }
 
-        ClientEntry {
-            id: self.id,
-            available,
-            held,
-            locked,
-        }
+        ClientEntry::new(self.id, available, held, locked)
     }
 }
 
@@ -144,9 +139,51 @@ pub enum ClientTransactionType {
 }
 
 pub struct ClientTransaction {
-    tx_type: ClientTransactionType,
     id: TransactionId,
+    tx_type: ClientTransactionType,
     amount: Option<Amount>,
+}
+
+impl ClientTransaction {
+    pub fn deposit(id: TransactionId, amount: Amount) -> Self {
+        Self {
+            id,
+            tx_type: ClientTransactionType::Deposit,
+            amount: Some(amount),
+        }
+    }
+
+    pub fn withdrawal(id: TransactionId, amount: Amount) -> Self {
+        Self {
+            id,
+            tx_type: ClientTransactionType::Withdrawal,
+            amount: Some(amount),
+        }
+    }
+
+    pub fn dispute(id: TransactionId) -> Self {
+        Self {
+            id,
+            tx_type: ClientTransactionType::Dispute,
+            amount: None,
+        }
+    }
+
+    pub fn resolve(id: TransactionId) -> Self {
+        Self {
+            id,
+            tx_type: ClientTransactionType::Resolve,
+            amount: None,
+        }
+    }
+
+    pub fn chargeback(id: TransactionId) -> Self {
+        Self {
+            id,
+            tx_type: ClientTransactionType::Chargeback,
+            amount: None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -161,5 +198,95 @@ mod tests {
         let locked = false;
         let entry = ClientEntry::new(id, available, held, locked);
         assert_eq!(format!("{}", entry), "1,1.2345,0.0001,1.2346,false");
+    }
+
+    #[test]
+    fn deposit_resolve() {
+        let mut client = Client::new(1);
+
+        client.add_transaction(ClientTransaction::deposit(1, Amount::new(100000)));
+        assert_eq!(format!("{}", client.get_entry()), "1,10,0,10,false");
+
+        client.add_transaction(ClientTransaction::dispute(1));
+        assert_eq!(format!("{}", client.get_entry()), "1,0,10,10,false");
+
+        client.add_transaction(ClientTransaction::resolve(1));
+        assert_eq!(format!("{}", client.get_entry()), "1,10,0,10,false");
+    }
+
+    #[test]
+    fn deposit_chargeback() {
+        let mut client = Client::new(1);
+
+        client.add_transaction(ClientTransaction::deposit(1, Amount::new(100000)));
+        assert_eq!(format!("{}", client.get_entry()), "1,10,0,10,false");
+
+        client.add_transaction(ClientTransaction::dispute(1));
+        assert_eq!(format!("{}", client.get_entry()), "1,0,10,10,false");
+
+        client.add_transaction(ClientTransaction::chargeback(1));
+        assert_eq!(format!("{}", client.get_entry()), "1,0,0,0,true");
+    }
+
+    #[test]
+    fn withdrawal_resolve() {
+        let mut client = Client::new(1);
+
+        client.add_transaction(ClientTransaction::deposit(1, Amount::new(100000)));
+        assert_eq!(format!("{}", client.get_entry()), "1,10,0,10,false");
+
+        client.add_transaction(ClientTransaction::withdrawal(2, Amount::new(20000)));
+        assert_eq!(format!("{}", client.get_entry()), "1,8,0,8,false");
+
+        client.add_transaction(ClientTransaction::dispute(2));
+        assert_eq!(format!("{}", client.get_entry()), "1,10,-2,8,false");
+
+        client.add_transaction(ClientTransaction::resolve(2));
+        assert_eq!(format!("{}", client.get_entry()), "1,8,0,8,false");
+    }
+
+    #[test]
+    fn withdrawal_chargeback() {
+        let mut client = Client::new(1);
+
+        client.add_transaction(ClientTransaction::deposit(1, Amount::new(100000)));
+        assert_eq!(format!("{}", client.get_entry()), "1,10,0,10,false");
+
+        client.add_transaction(ClientTransaction::withdrawal(2, Amount::new(20000)));
+        assert_eq!(format!("{}", client.get_entry()), "1,8,0,8,false");
+
+        client.add_transaction(ClientTransaction::dispute(2));
+        assert_eq!(format!("{}", client.get_entry()), "1,10,-2,8,false");
+
+        client.add_transaction(ClientTransaction::chargeback(2));
+        assert_eq!(format!("{}", client.get_entry()), "1,10,0,10,true");
+    }
+
+    #[test]
+    fn cannot_spend_over_available_funds() {
+        let mut client = Client::new(1);
+
+        client.add_transaction(ClientTransaction::deposit(1, Amount::new(10000)));
+        assert_eq!(format!("{}", client.get_entry()), "1,1,0,1,false");
+
+        client.add_transaction(ClientTransaction::withdrawal(2, Amount::new(20000)));
+        assert_eq!(format!("{}", client.get_entry()), "1,1,0,1,false");
+    }
+
+    #[test]
+    fn negative_available_funds() {
+        let mut client = Client::new(1);
+
+        client.add_transaction(ClientTransaction::deposit(1, Amount::new(10000)));
+        assert_eq!(format!("{}", client.get_entry()), "1,1,0,1,false");
+
+        client.add_transaction(ClientTransaction::withdrawal(2, Amount::new(5000)));
+        assert_eq!(format!("{}", client.get_entry()), "1,0.5,0,0.5,false");
+
+        client.add_transaction(ClientTransaction::dispute(1));
+        assert_eq!(format!("{}", client.get_entry()), "1,-0.5,1,0.5,false");
+
+        client.add_transaction(ClientTransaction::chargeback(1));
+        assert_eq!(format!("{}", client.get_entry()), "1,-0.5,0,-0.5,true");
     }
 }
