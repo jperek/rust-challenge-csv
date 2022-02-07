@@ -9,11 +9,14 @@ use std::{
 use csv::{ReaderBuilder, Trim};
 use serde::Deserialize;
 
-type ClientId = u16;
-type TransactionId = u32;
-
 mod amount;
 use amount::Amount;
+
+mod client;
+use client::{Client, ClientEntry};
+
+type ClientId = u16;
+type TransactionId = u32;
 
 enum Transaction {
     Deposit(ClientId, TransactionId, Amount),
