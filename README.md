@@ -4,6 +4,7 @@
 I attempted to handle all cases. I made the following assumptions:
 * amount value for `available` or `held` can be negative, for example after charging back a deposit transaction with withdrawals in between.
 * `locking` the account means the same as `freezing` the account which means that no withdrawals can be made, deposits and handling disputes works as usual.
+* input transactions do not contain negative amounts
 
 ## Correctness
 I tried to ensure correctnes of the application through unit tests. If I had more time, I'd write more elaborate unit tests and integration tests.
@@ -20,3 +21,4 @@ I focused at making the application work according to the specification. These a
 * Use some kind of concurrency to allow the application to read from disk and process records at the same time, similarily for writing records to disk and serializing them to string representation. Just a thread and a channel could make significant impact.
 * I expect many of the operations made in the app to allocate, which could certainly be avoided.
 * Maybe if the system operated on a very high number of clients and a low number of transactions, a more fine-tuned structure could be selected. This would influence both CPU performance and memory usage
+* I could also validate transactions as they come. At the moment I'm keeping all transactions in memory, I could check if they are valid keeping track of available resources for each client. That would be very beneficial in case of a large number invalid transactions, but in turn it would increase memory usage for cases where the number of clients is larger.
