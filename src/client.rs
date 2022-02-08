@@ -48,21 +48,24 @@ impl Client {
         let mut locked = false;
 
         let mut disputed: HashMap<TransactionId, Amount> = HashMap::new();
+        let mut valid_transactions= Vec::new();
 
         for tx in &self.transactions {
             match tx.tx_type {
                 ClientTransactionType::Deposit => {
                     let amount = tx.amount.unwrap();
                     available += amount;
+                    valid_transactions.push(tx);
                 }
                 ClientTransactionType::Withdrawal => {
                     let amount = tx.amount.unwrap();
                     if available >= amount && !locked {
                         available -= amount;
+                        valid_transactions.push(tx);
                     }
                 }
                 ClientTransactionType::Dispute => {
-                    if let Some(tx_found) = self.transactions.iter().find(|other_tx| {
+                    if let Some(tx_found) = valid_transactions.iter().find(|other_tx| {
                         other_tx.id == tx.id
                             && (matches!(other_tx.tx_type, ClientTransactionType::Deposit)
                                 || matches!(other_tx.tx_type, ClientTransactionType::Withdrawal))
@@ -81,6 +84,8 @@ impl Client {
                         held -= *amount;
                         available += *amount;
                         disputed.remove(&tx.id);
+                        let tx_to_remove = tx.id;
+                        valid_transactions.retain(|tx| tx.id != tx_to_remove);
                     }
                 }
                 ClientTransactionType::Chargeback => {
@@ -88,6 +93,8 @@ impl Client {
                         locked = true;
                         held -= *amount;
                         disputed.remove(&tx.id);
+                        let tx_to_remove = tx.id;
+                        valid_transactions.retain(|tx| tx.id != tx_to_remove);
                     }
                 }
             }
