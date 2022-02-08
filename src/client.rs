@@ -65,11 +65,7 @@ impl Client {
                     }
                 }
                 ClientTransactionType::Dispute => {
-                    if let Some(tx_found) = valid_transactions.iter().find(|other_tx| {
-                        other_tx.id == tx.id
-                            && (matches!(other_tx.tx_type, ClientTransactionType::Deposit)
-                                || matches!(other_tx.tx_type, ClientTransactionType::Withdrawal))
-                    }) {
+                    if let Some(tx_found) = valid_transactions.iter().find(|other_tx| other_tx.id == tx.id) {
                         let mut amount = tx_found.amount.unwrap();
                         if matches!(tx_found.tx_type, ClientTransactionType::Withdrawal) {
                             amount = Amount::new(0) - amount;
